@@ -1,0 +1,42 @@
+import pandas as pd
+import numpy as np
+df = pd.read_excel("/home/affine/Desktop/attendance/login details.xlsx")
+In_df = pd.DataFrame(df[df['InOut'] == 'In'].groupby(['Empid','Date','EmpName','InOut'])['Time'].min().reset_index())
+Out_df = pd.DataFrame(df[df['InOut'] == 'Out'].groupby(['Empid','Date','EmpName','InOut'])['Time'].max().reset_index())
+new_df = pd.merge(In_df,Out_df,on = ['Empid','Date','EmpName'],how = 'outer')
+new_df.rename(columns={'InOut_x': 'In','InOut_y':'Out','Time_x':'Time_In','Time_y' : 'Time_Out'}, inplace=True)
+df_more_hrs = new_df.fillna(0)
+df_more_hrs = df_more_hrs[['Empid','Date','EmpName','Time_In','Time_Out']]
+df_more_hrs
+df_more_hrs['Hrs_Worked']= (pd.to_datetime(df_more_hrs['Time_Out']) - pd.to_datetime(df_more_hrs['Time_In'])).astype('timedelta64[h]')
+df_more_hrs = df_more_hrs[(df_more_hrs['Hrs_Worked'] > 12) & (df_more_hrs['Hrs_Worked']<4000)]
+df_more_hrs['Extra_Hrs'] = df_more_hrs['Hrs_Worked']-12
+df_more_hrs
+######## less than 6 hrs ######
+df_less_hrs = new_df.fillna(0)
+df_less_hrs = df_less_hrs[['Empid','Date','EmpName','Time_In','Time_Out']]
+df_less_hrs['Hrs_Worked']= (pd.to_datetime(df_less_hrs['Time_Out']) - pd.to_datetime(df_less_hrs['Time_In'])).astype('timedelta64[h]')
+df_less_hrs = df_less_hrs[(df_less_hrs['Hrs_Worked'] < 6) & (df_less_hrs['Hrs_Worked'] > -4000)]
+df_less_hrs
+#####late comers####
+df_late_cmrs = new_df[['Empid','Date','EmpName','Time_In','Time_Out']]
+df_late_cmrs = df_late_cmrs[pd.to_timedelta(df_late_cmrs['Time_In'])> pd.to_timedelta('10:00:00')]
+df_late_cmrs['Hrs_Worked']= (pd.to_datetime(df_late_cmrs['Time_Out']) - pd.to_datetime(df_late_cmrs['Time_In'])).astype('timedelta64[h]')
+df_late_cmrs
+##### Working on weekends and holidays #####
+df_weekends = new_df[['Empid','Date','EmpName','Time_In','Time_Out']]
+df_weekends = df_weekends.rename(columns={'EmpName_In':'EmpName'})
+df_weekends['Date'] = pd.to_datetime(df_weekends['Date'],format = '%d/%m/%Y')
+df_weekends['Day_Of_Week'] = df_weekends['Date'].dt.dayofweek
+days = {0:'Mon',1:'Tues',2:'Weds',3:'Thurs',4:'Fri',5:'Sat',6:'Sun'}
+df_weekends['day_of_week'] = df_weekends['Day_Of_Week'].apply(lambda x: days[x])
+holidays = ['2016-01-01','2016-01-15','2016-01-26','2016-03-24','2016-03-25','2016-04-08','2016-07-06'
+            ,'2016-08-15','2016-09-05','2016-10-11','2016-10-31','2016-11-01']
+df_weekends['Holiday'] = df_weekends['Date'].isin(holidays)
+df_weekends = df_weekends[(df_weekends['day_of_week']=='Sat') | (df_weekends['day_of_week'] == 'Sun')| (df_weekends['Holiday'] == True)]
+writer = pd.ExcelWriter('/home/affine/Desktop/attendance/Processed_Sheet.xlsx', engine='xlsxwriter')
+df_more_hrs.to_excel(writer, sheet_name='Working_More',index=False)
+df_less_hrs.to_excel(writer, sheet_name='Working_Less',index=False)
+df_late_cmrs.to_excel(writer, sheet_name='Late_Cmrs',index=False)
+df_weekends.to_excel(writer,sheet_name='weekends',index=False)
+writer.save()
