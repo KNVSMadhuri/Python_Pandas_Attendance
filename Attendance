@@ -92,6 +92,35 @@ null_data = null_data[['Empid','EmpName','Date','Time_In','Time_Out']]
 not_swiped = null_data.astype('str')
 not_swiped = not_swiped.replace('nan',' ')
 
+##absent no leave###
+start = pd.to_datetime('2016-03-01')
+end = pd.to_datetime('2016-04-04')
+dates = pd.DataFrame(pd.date_range(start, end, freq='D'),columns = ['Date'])
+dates['Day_Of_Week'] = dates['Date'].dt.dayofweek
+days = {0:'Mon',1:'Tues',2:'Weds',3:'Thurs',4:'Fri',5:'Sat',6:'Sun'}
+dates['day_of_week'] = dates['Day_Of_Week'].apply(lambda x: days[x])
+holidays = ['2016-01-01','2016-01-15','2016-01-26','2016-03-24','2016-03-25','2016-04-08','2016-07-06'
+            ,'2016-08-15','2016-09-05','2016-10-11','2016-10-31','2016-11-01']
+dates['Holiday'] = dates['Date'].isin(holidays)
+working_dates = dates[((dates.day_of_week != 'Sat') & (dates.day_of_week != 'Sun')) & ((dates.Holiday != True))] 
+working_dates = working_dates[['Date']]
+#working_dates
+
+                      
+#absent_new_df = pd.merge(working_dates,new_df,on = ['Date'],how = 'inner')
+#abse_new_df
+#absent_new_df
+#working_days
+#new_df
+unique_df = new_df.groupby(['Empid', 'EmpName']).count().reset_index()
+unique_df = unique_df[['Empid','EmpName']]
+unique_df['key'] = 0
+working_dates['key'] = 0
+repeat_df = unique_df.merge(working_dates, how='left', on = 'key')
+repeat_df.drop('key',1, inplace=True)
+absent_df = repeat_df.merge(new_df,how='left',on=['Empid','Date','EmpName'])
+absent_df
+
 writer = pd.ExcelWriter('/home/affine/Desktop/attendance/Processed_Sheet.xlsx', engine='xlsxwriter')
 df_more_hrs.to_excel(writer, sheet_name='Working_More',index=False)
 df_less_hrs.to_excel(writer, sheet_name='Working_Less',index=False)
