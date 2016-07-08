@@ -61,6 +61,37 @@ over_night_df['Worked_Hrs'] = (24 - pd.to_timedelta(over_night_df['In_Time']).as
 over_night_df['over_night_Hrs'] = over_night_df['Out_Time']
 over_night_df_modified = over_night_df.astype('str')
 over_night_df_modified
+###Leave but present###
+from datetime import date, timedelta as td
+leave_df = pd.read_excel('/home/affine/Desktop/attendance/Leave Availed Report.xlsx')
+leave_df = leave_df[['Employee No','Name','From','To']]
+leave_df.rename(columns={'Employee No': 'Empid','Name':'EmpName'}, inplace=True)
+d1 = pd.DatetimeIndex(leave_df['From']).day
+d2 = pd.DatetimeIndex(leave_df['To']).day
+delta = d2-d1
+delta = delta+1
+A = pd.DataFrame()
+for i in range(len(delta)):
+    a = pd.DataFrame(pd.date_range(start = leave_df['From'][i],periods=delta[i],freq = timedelta(1)),columns = ['dates'])
+    a['Empid'] =leave_df['Empid'][i]
+    A = pd.concat([a,A],axis=0)
+    
+leave_new_df = pd.merge(A,leave_df,how='outer',on='Empid')
+leave_new_df = leave_new_df[['Empid','EmpName','dates']]
+leave_new_df.rename(columns={'dates': 'Date'}, inplace=True)
+leave_new_df.drop_duplicates()
+new_df['Date'] = pd.to_datetime(new_df['Date'],format = '%d/%m/%Y')
+leave_new_new_df = pd.merge(leave_new_df,new_df,on = ['Empid','Date','EmpName'],how = 'inner')
+leave_new_new_df = leave_new_new_df[['Empid','EmpName','Date','Time_In','Time_Out']]
+leave_new_new_df['Hrs_Worked'] = (pd.to_datetime(leave_new_new_df['Time_Out']) - pd.to_datetime(leave_new_new_df['Time_In'])).astype('timedelta64[h]')
+leave_new_df_modified = leave_new_new_df.astype('str')
+
+###Not Swiped####
+null_data = new_df[new_df.isnull().any(axis=1)]
+null_data = null_data[['Empid','EmpName','Date','Time_In','Time_Out']]
+not_swiped = null_data.astype('str')
+not_swiped = not_swiped.replace('nan',' ')
+
 writer = pd.ExcelWriter('/home/affine/Desktop/attendance/Processed_Sheet.xlsx', engine='xlsxwriter')
 df_more_hrs.to_excel(writer, sheet_name='Working_More',index=False)
 df_less_hrs.to_excel(writer, sheet_name='Working_Less',index=False)
