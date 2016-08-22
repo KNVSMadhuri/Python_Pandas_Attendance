@@ -1,0 +1,234 @@
+import pandas as pd
+import numpy as np
+from datetime import date, timedelta as td
+df = pd.read_excel("/home/affine/Desktop/attendance/Access_data_full.xlsx")
+In_df = pd.DataFrame(df[df['InOut'] == 'In'].groupby(['Empid','Date','EmpName','InOut'])['Time'].min().reset_index())
+Out_df = pd.DataFrame(df[df['InOut'] == 'Out'].groupby(['Empid','Date','EmpName','InOut'])['Time'].max().reset_index())
+new_df = pd.merge(In_df,Out_df,on = ['Empid','Date','EmpName'],how = 'outer')
+new_df.rename(columns={'InOut_x': 'In','InOut_y':'Out','Time_x':'Login_Time','Time_y' : 'Logout_Time'}, inplace=True)
+
+### more hrs ###
+
+df_more_hrs = new_df.dropna()
+df_more_hrs = df_more_hrs[['Empid','Date','EmpName','Login_Time','Logout_Time']]
+df_more_hrs['Hrs_Worked']= (pd.to_timedelta(df_more_hrs['Logout_Time']) - pd.to_timedelta(df_more_hrs['Login_Time'])).astype('str').str[7:12]
+df_more_hrs_new = df_more_hrs[['Hrs_Worked']]
+df_more_hrs_new.is_copy = False
+df_more_hrs_new['More_than_9'] = df_more_hrs_new[((df_more_hrs_new['Hrs_Worked'] > '09:00') & (df_more_hrs_new['Hrs_Worked'] < '12:00') )]
+df_more_hrs_new_df = df_more_hrs[['Hrs_Worked']]
+df_more_hrs_new_df.is_copy = False
+df_more_hrs_new_df['More_than_12'] = df_more_hrs_new_df[(df_more_hrs_new_df['Hrs_Worked'] > '12:00')]
+merged_df_more = pd.concat([df_more_hrs_new,df_more_hrs_new_df], axis=1,join='inner')
+merged_df_more = merged_df_more[['More_than_9','More_than_12']]
+more_hrs_df = pd.concat([df_more_hrs,merged_df_more], axis=1,join='inner')
+more_hrs_df = more_hrs_df.dropna(subset=['More_than_9','More_than_12'], how='all').fillna(0)
+merged_more_df = pd.merge(more_hrs_df,df1, on=['Empid','EmpName'], how = 'inner')
+
+######## less than 6 hrs ######
+df_less_hrs = new_df.dropna()
+df_less_hrs = df_less_hrs[['Empid','Date','EmpName','Login_Time','Logout_Time']]
+df_less_hrs['Hrs_Worked']= (pd.to_timedelta(df_less_hrs['Logout_Time']) - pd.to_timedelta(df_less_hrs['Login_Time'])).astype('str').str[7:12]
+df_less_hrs = df_less_hrs[(df_less_hrs['Hrs_Worked'] < '06:00:00') ]
+merged_less_df = pd.merge(df_less_hrs,df1, on=['Empid','EmpName'], how = 'inner')
+
+
+#####late comers####
+df_late_cmrs = new_df[['Empid','Date','EmpName','Login_Time','Logout_Time']]
+df_late_cmrs = df_late_cmrs[pd.to_timedelta(df_late_cmrs['Login_Time']) > pd.to_timedelta('10:00:00')]
+df_late_cmrs['Hrs_Worked']= (pd.to_datetime(df_late_cmrs['Logout_Time']) - pd.to_datetime(df_late_cmrs['Login_Time'])).astype('str').str[7:12]
+merged_late_df = pd.merge(df_late_cmrs,df1, on=['Empid','EmpName'], how = 'inner')
+
+
+##### Working on weekends and holidays #####
+df_weekends = new_df[['Empid','Date','EmpName','Login_Time','Logout_Time']]
+df_weekends.is_copy = False
+df_weekends['Date'] = pd.to_datetime(df_weekends['Date'],format = '%d/%m/%Y')
+df_weekends['Day_Of_Week'] = df_weekends['Date'].dt.dayofweek
+days = {0:'Mon',1:'Tues',2:'Weds',3:'Thurs',4:'Fri',5:'Sat',6:'Sun'}
+df_weekends['day_of_week'] = df_weekends['Day_Of_Week'].apply(lambda x: days[x])
+holidays = ['2016-01-01','2016-01-15','2016-01-26','2016-03-24','2016-03-25','2016-04-08','2016-07-06'
+            ,'2016-08-15','2016-09-05','2016-10-11','2016-10-31','2016-11-01']
+df_weekends['Holiday'] = df_weekends['Date'].isin(holidays)
+df_weekends_modified = df_weekends[((df_weekends['day_of_week']=='Sat') | (df_weekends['day_of_week'] == 'Sun'))|(df_weekends['Holiday'] == True) ] 
+df_weekends_modified.is_copy = False
+df_weekends_modified.loc[df_weekends_modified.Holiday == True,'day_of_week'] = 'Holiday'
+df_weekends_modified['Hrs_Worked'] = (pd.to_datetime(df_weekends_modified['Logout_Time']) - pd.to_datetime(df_weekends_modified['Login_Time'])).astype('str').str[7:12]
+df_weekends_modified = df_weekends_modified[['Empid','Date','EmpName','Login_Time','Logout_Time','Hrs_Worked','day_of_week']]
+df_weekends_m = df_weekends_modified.astype('str')
+merged_weekends_df = pd.merge(df_weekends_m,df1, on=['Empid','EmpName'], how = 'inner')
+
+
+## Working on overnight###
+
+In_df = pd.DataFrame(df[df['InOut'] == 'In'].groupby(['Empid','Date','EmpName','InOut'])['Time']
+                     .agg([pd.np.min, pd.np.max]).reset_index())
+Out_df = pd.DataFrame(df[df['InOut'] == 'Out'].groupby(['Empid','Date','EmpName','InOut'])['Time']
+                      .agg([pd.np.min, pd.np.max]).reset_index())
+o_new_df = pd.merge(In_df,Out_df,on = ['Empid','Date','EmpName'],how = 'outer')
+o_new_df.rename(columns={'InOut_x': 'In','InOut_y':'Out','Time_x':'Login_Time','Time_y' : 'Logout_Time'}, inplace=True)
+o_new_df['Date'] = pd.to_datetime(o_new_df['Date'],format = '%d/%m/%Y')
+new_df_min = o_new_df[(pd.to_timedelta(o_new_df['amin_y']) < pd.to_timedelta('08:00:00'))]
+new_df_min.is_copy = False
+new_df_min['PreviousDate'] = pd.to_datetime(o_new_df['Date'],format = '%d/%m/%Y')-td(days=1)
+overnight_df = new_df_min.astype('str')
+overnight_df['Appended'] = overnight_df['Empid'] + '_' + overnight_df['PreviousDate']
+overnight_new_df = o_new_df.astype('str')
+overnight_new_df['Appended'] = overnight_new_df['Empid'] + '_' + overnight_new_df['Date']
+overnight_df = overnight_df[['Empid','Date','EmpName','amin_x','amin_y','Appended']]
+overnight_new_df = overnight_new_df[['Empid','Date','EmpName','amin_x','amin_y','Appended']]
+over_night_df = pd.merge(overnight_df, overnight_new_df, how='inner', on=['Empid','EmpName','Appended'])
+over_night_df = over_night_df[over_night_df['amin_x_x']!= 'nan']
+over_night_df.rename(columns={'Date_x': 'Date_Out','Date_y':'Date_In','amin_x_y':'Login_Time','amin_y_x' : 'Logout_Time'}, inplace=True)
+over_night_df = over_night_df[['Empid','EmpName','Date_In','Login_Time','Date_Out','Logout_Time']]
+over_night_df['Hrs_Worked'] = (24 - pd.to_timedelta(over_night_df['Login_Time'])
+                               .astype('timedelta64[h]')) +(pd.to_timedelta(over_night_df['Logout_Time']).astype('timedelta64[h]'))
+over_night_df['Beyond_night_12_hrs'] = over_night_df['Logout_Time']
+over_night_new = over_night_df[['Hrs_Worked']]
+over_night_new.is_copy = False
+over_night_new['Worked_More_than_12_hrs'] = over_night_new[(over_night_new['Hrs_Worked'] >= 12)]
+over_night_new = over_night_new[['Worked_More_than_12_hrs']]
+over_night_hrs_df = pd.concat([over_night_df,over_night_new], axis=1,join='inner').fillna(0)
+over_night_hrs_df_modified = over_night_hrs_df.astype('str')
+merged_overnight_df = pd.merge(over_night_hrs_df_modified,df1, on=['Empid','EmpName'], how = 'inner')
+
+### Ladies worked late night#####
+ladies_df = pd.read_excel("/home/affine/Desktop/attendance/ladies-Affine.xlsx")
+ladies_df.rename(columns={'Name': 'EmpName','Emp ID':'Empid'}, inplace=True)
+new_ladies_df = pd.merge(df,ladies_df,how = 'inner',on = ['Empid','EmpName'])
+ladies_In_df = pd.DataFrame(new_ladies_df[new_ladies_df['InOut'] == 'In'].groupby(['Empid','Date','EmpName','InOut'])['Time'].min().reset_index())
+ladies_Out_df = pd.DataFrame(new_ladies_df[new_ladies_df['InOut'] == 'Out'].groupby(['Empid','Date','EmpName','InOut'])['Time'].max().reset_index())
+ladies_new_df = pd.merge(ladies_In_df,ladies_Out_df,on = ['Empid','Date','EmpName'],how = 'outer')
+ladies_new_df.rename(columns={'InOut_x': 'In','InOut_y':'Out','Time_x':'Login_Time','Time_y' : 'Logout_Time'}, inplace=True)
+ladies_new_df = ladies_new_df[ladies_new_df['Logout_Time'] > '20:00:00']
+ladies_new_df = ladies_new_df[['Empid','EmpName','Date','Login_Time','Logout_Time']]
+ladies_new_df['Hrs_Worked'] = (pd.to_timedelta(ladies_new_df['Logout_Time']) - pd.to_timedelta(ladies_new_df['Login_Time'])).astype('str').str[7:12]
+merged_ladies_df =  pd.merge(ladies_new_df,df1, on=['Empid','EmpName'], how = 'inner')
+
+
+###Leave but present###
+leave_df = pd.read_excel('/home/affine/Desktop/attendance/Leave Transaction Report.xlsx')
+leave_df = leave_df[['Employee No','Name','Leave Type','From Date','To Date']]
+leave_df.rename(columns={'Employee No': 'Empid','Name':'EmpName','Leave Type':'LeaveType'}, inplace=True)
+d1 = pd.DatetimeIndex(leave_df['From Date']).day
+d2 = pd.DatetimeIndex(leave_df['To Date']).day
+delta = d2-d1
+delta = delta+1
+A = pd.DataFrame()
+for i in range(len(delta)):
+    a = pd.DataFrame(pd.date_range(start = leave_df['From Date'][i],periods=delta[i],freq = td(1)),columns = ['dates'])
+    a['Empid'] =leave_df['Empid'][i]
+    a['LeaveType'] = leave_df['LeaveType'][i]
+    A = pd.concat([a,A],axis=0)
+   
+    
+leave_new_df = pd.merge(A,leave_df,how='outer',on=['Empid','LeaveType'])
+leave_new_df = leave_new_df[['Empid','EmpName','LeaveType','dates']]
+leave_new_df.rename(columns={'dates': 'Date'}, inplace=True)
+leave_new_df = leave_new_df.drop_duplicates()
+new_df['Date'] = pd.to_datetime(new_df['Date'],format = '%d/%m/%Y')
+leave_new_new_df = pd.merge(leave_new_df,new_df,on = ['Empid','Date','EmpName'],how = 'inner')
+leave_new_new_df = leave_new_new_df[['Empid','EmpName','Date','LeaveType','Login_Time','Logout_Time']]
+leave_new_new_df['Hrs_Worked'] = (pd.to_timedelta(leave_new_new_df['Logout_Time'])- pd.to_timedelta(leave_new_new_df['Login_Time'])).astype('str').str[7:12]
+leave_new_df_modified = leave_new_new_df
+merged_leave_df = pd.merge(leave_new_df_modified,df1, on=['Empid','EmpName'], how = 'inner')
+
+###Not Swiped####
+null_data = new_df[new_df.isnull().any(axis=1)]
+null_data = null_data[['Empid','EmpName','Date','Login_Time','Logout_Time']]
+not_swiped = null_data.astype('str')
+not_swiped = not_swiped.replace('nan',' ')
+merged_not_swiped = pd.merge(not_swiped,df1,on=['Empid','EmpName'], how = 'inner')
+
+## absent with out leave ###
+start = pd.to_datetime('2016-06-01')
+end = pd.to_datetime('2016-07-01')
+dates = pd.DataFrame(pd.date_range(start, end, freq='D'),columns = ['Date'])
+dates['Day_Of_Week'] = dates['Date'].dt.dayofweek
+days = {0:'Mon',1:'Tues',2:'Weds',3:'Thurs',4:'Fri',5:'Sat',6:'Sun'}
+dates['day_of_week'] = dates['Day_Of_Week'].apply(lambda x: days[x])
+holidays = ['2016-01-01','2016-01-15','2016-01-26','2016-03-24','2016-03-25','2016-04-08','2016-07-06'
+            ,'2016-08-15','2016-09-05','2016-10-11','2016-10-31','2016-11-01']
+dates['Holiday'] = dates['Date'].isin(holidays)
+working_dates = dates[((dates.day_of_week != 'Sat') & (dates.day_of_week != 'Sun')) & ((dates.Holiday != True))] 
+working_dates = working_dates[['Date']]
+unique_df = pd.read_excel('/home/affine/Desktop/attendance/Employee_data (1).xlsx')
+unique_df = unique_df[['EmpID','EmpName','Status']]
+unique_new_df = unique_df[(unique_df['Status'] == 'Active')]
+unique_new_df.is_copy = False
+unique_new_df.rename(columns={'EmpID':'Empid'}, inplace=True)
+unique_new_df = unique_new_df[['Empid','EmpName']]
+
+###cross join####
+unique_new_df['key'] = 0
+working_dates['key'] = 0
+repeat_df = unique_new_df.merge(working_dates, how='left', on = 'key')
+repeat_df.drop('key',1, inplace=True)
+absent_df = repeat_df.merge(new_df,how='left',on=['Empid','Date','EmpName'])
+absent_new_df = absent_df[absent_df['Login_Time'].isnull() & absent_df['Logout_Time'].isnull()]
+absent_new_new_df = pd.merge(absent_new_df,leave_new_df,on = ['Empid','Date','EmpName'],how = 'outer')
+absent_new_new_df_modified = absent_new_new_df.astype('str')
+merged_absent_df = pd.merge(absent_new_new_df_modified,df1,on=['Empid','EmpName'], how = 'inner')
+
+###Summary Report###
+
+summary_df = df1
+summary_df = summary_df[['Empid']]
+summary_df = summary_df.groupby(['Empid']).size().count()
+summary_df_new = pd.Series.to_frame(pd.Series(summary_df)) 
+summary_df_new.rename(columns={0: 'Total_Employees'}, inplace=True)
+summary_df_new = summary_df_new.transpose()
+
+
+
+Total_Man_Days = pd.Series.to_frame(pd.Series(new_df[['Empid']].groupby('Empid').size().sum()))
+Total_Man_Days.rename(columns={0: 'Total_Man_Days'}, inplace=True)
+Total_Man_Days = Total_Man_Days.transpose()
+
+
+Total_late_cmrs = df_late_cmrs[['Empid']].groupby('Empid').size().sum()
+Total_late_cmrs = pd.Series.to_frame(pd.Series(Total_late_cmrs))
+Total_late_cmrs.rename(columns={0: 'Total_late_cmrs'}, inplace=True)
+Total_late_cmrs = Total_late_cmrs.transpose()
+
+
+Total_weekends = df_weekends_modified[['Empid']].groupby('Empid').size().sum()
+Total_weekends = pd.Series.to_frame(pd.Series(Total_weekends))
+Total_weekends.rename(columns={0:'Total_Weekends_Holidays_man_days'}, inplace=True)
+Total_weekends = Total_weekends.transpose()
+
+Total_planned_Man_Days = leave_df[['Empid']].groupby('Empid').size().sum()
+Total_planned_Man_Days = pd.Series.to_frame(pd.Series(Total_planned_Man_Days))
+Total_planned_Man_Days.rename(columns={0:'Total_planned_man_days'}, inplace=True)
+Total_planned_Man_Days
+
+Total_unplanned_Man_Days = absent_null_data[['Empid']].groupby('Empid').size().sum()
+Total_unplanned_Man_Days = pd.Series.to_frame(pd.Series(Total_unplanned_Man_Days))
+Total_unplanned_Man_Days.rename(columns={0:'Total_unplanned_man_days'}, inplace=True)
+Total_unplanned_Man_Days
+
+merged_leave_days = Total_planned_Man_Days.Total_planned_man_days+Total_unplanned_Man_Days.Total_unplanned_man_days
+Total_leave_Man_Days = pd.Series.to_frame(pd.Series(merged_leave_days))
+Total_leave_Man_Days.rename(columns={0:'Total_leave_man_days'}, inplace=True)
+Total_leave_Man_Days = Total_leave_Man_Days.transpose()
+
+
+
+
+frames = [summary_df_new,Total_Man_Days,Total_late_cmrs,Total_weekends,Total_leave_Man_Days]
+merged_frames = pd.concat(frames)
+
+
+##Writing to Excel sheet##
+
+writer = pd.ExcelWriter('/home/affine/Desktop/attendance/Processed_Sheet.xlsx', engine='xlsxwriter')
+merged_more_df.to_excel(writer, sheet_name='Working_More',index=False)
+merged_less_df.to_excel(writer, sheet_name='Working_Less',index=False)
+merged_late_df.to_excel(writer, sheet_name='Late_Cmrs',index=False)
+merged_weekends_df.to_excel(writer,sheet_name='Weekends',index=False)
+merged_overnight_df.to_excel(writer,sheet_name='Overnight',index=False)
+merged_ladies_df.to_excel(writer,sheet_name='Women_After_8',index=False)
+merged_leave_df.to_excel(writer,sheet_name='Leave_But_Present',index=False)
+merged_not_swiped.to_excel(writer,sheet_name='Not_Swiped',index=False)
+merged_absent_df.to_excel(writer,sheet_name='Absent_with_out_leave',index=False)
+merged_frames.to_excel(writer,sheet_name = 'Summary_Report',index = True,header=False)
+writer.save()
