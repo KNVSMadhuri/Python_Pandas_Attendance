@@ -1,0 +1,69 @@
+import pandas as pd
+import numpy as np
+from datetime import date, timedelta as td
+
+c_df = pd.read_excel("/home/affine/Desktop/attendance/oct17-21/cessnaaccessdata.xlsx")
+c_df = c_df[['Date','Time','Empid','EmpName','InOut']]
+h_df = pd.read_excel("/home/affine/Desktop/attendance/oct17-21/HSR login details from oct 17 to 23.xlsx")
+h_df = h_df[['Date','Time','Empid','EmpName','InOut']]
+
+#Combining HSR data and Cessna data
+main_df = pd.concat([h_df, c_df])
+#Adding Temp Card Data
+temp_df=pd.read_excel("/home/affine/Desktop/attendance/oct17-21/Security.xlsx")
+temp_df=temp_df[['DATE','EMP NAME','EMP  ID NO','TEMP ID NO']]
+temp_df.rename(columns={'DATE': 'Date','EMP NAME':'EmpName','EMP  ID NO':'Empid','TEMP ID NO':'Tempid'}, inplace=True)
+u_df = temp_df[['Date','EmpName','Empid']]
+l_df = pd.DataFrame(temp_df['Tempid'].str.upper())
+m_df = pd.concat([u_df,l_df],axis=1)
+#contains Temp
+t_df = main_df[main_df["Empid"].str.contains("TEMP")]
+t_df.is_copy=False
+t_df = t_df[['Date','Time','Empid','InOut']]
+t_df.rename(columns={'Empid':'Tempid'}, inplace=True)
+n_df = pd.merge(t_df,m_df,on=['Tempid','Date'],how='inner')
+n_df = n_df[['Date','Time','Empid','EmpName','InOut']]
+#not contains Temp
+ne_df = main_df[~(main_df['Empid'].str.contains("TEMP"))]
+df = pd.concat([ne_df,n_df]).reset_index().drop('index',1)
+df1 = pd.read_excel('/home/affine/Desktop/attendance/oct17-21/Manager.xlsx')
+df1.rename(columns={'Emp ID': 'Empid','Name':'EmpName','Manager':'ManagerName'}, inplace=True)
+In_df = pd.DataFrame(df[df['InOut'] == 'In'].groupby(['Empid','Date','EmpName','InOut'])['Time'].min().reset_index())
+Out_df = pd.DataFrame(df[df['InOut'] == 'Out'].groupby(['Empid','Date','EmpName','InOut'])['Time'].max().reset_index())
+new_df = pd.merge(In_df,Out_df,on = ['Empid','Date','EmpName'],how = 'outer')
+new_df.rename(columns={'InOut_x': 'In','InOut_y':'Out','Time_x':'Login_Time','Time_y' : 'Logout_Time'}, inplace=True)
+new_df['Year'] = pd.to_datetime(new_df['Date']).dt.year
+new_df['Month'] = pd.to_datetime(new_df['Date']).dt.month
+new_df['Week_Number']=pd.to_datetime(new_df['Date']).dt.week
+
+
+df_more_hrs = new_df.dropna()
+df_more_hrs = df_more_hrs[['Empid','Date','EmpName','Year','Month','Week_Number','Login_Time','Logout_Time']]
+df_more_hrs['Hrs_Worked']= (pd.to_timedelta(df_more_hrs['Logout_Time']) - pd.to_timedelta(df_more_hrs['Login_Time'])).astype('str').str[7:12]
+df_more_hrs_new = df_more_hrs[['Hrs_Worked']]
+df_more_hrs_new.is_copy = False
+df_more_hrs_new['More_than_9'] = df_more_hrs_new[((df_more_hrs_new['Hrs_Worked'] > '09:00') & (df_more_hrs_new['Hrs_Worked'] < '12:00') )]
+df_more_hrs_new['Extra_Hrs_9'] = (pd.to_datetime(df_more_hrs_new['More_than_9']) - pd.to_datetime('09:00')).astype('str').str[7:12]
+df_more_hrs_new_df = df_more_hrs[['Hrs_Worked']]
+df_more_hrs_new_df.is_copy = False
+df_more_hrs_new_df['More_than_12'] = df_more_hrs_new_df[(df_more_hrs_new_df['Hrs_Worked'] > '12:00')]
+df_more_hrs_new_df['Extra_Hrs_12'] = (pd.to_datetime(df_more_hrs_new_df['More_than_12']) - pd.to_datetime('12:00')).astype('str').str[7:12]
+df_less_hrs_new_df = df_more_hrs[['Hrs_Worked']]
+df_less_hrs_new_df.is_copy = False
+df_less_hrs_new_df['Less_than_6'] = df_less_hrs_new_df[(df_less_hrs_new_df['Hrs_Worked'] < '06:00:00')]
+merged_df_more = pd.concat([df_more_hrs_new,df_more_hrs_new_df,df_less_hrs_new_df], axis=1,join='inner')
+merged_df_more = merged_df_more[['More_than_9','Extra_Hrs_9','More_than_12','Extra_Hrs_12','Less_than_6']]
+more_hrs_df = pd.concat([df_more_hrs,merged_df_more], axis=1,join='inner')
+more_hrs_df = more_hrs_df.dropna(subset=['More_than_9','More_than_12','Less_than_6'], how='all').fillna('')
+merged_more_df = pd.merge(more_hrs_df,df1, on=['Empid','EmpName'], how = 'inner')
+merged_more_df = merged_more_df[['Empid','Date','EmpName','Year','Month','Week_Number','More_than_9','More_than_12','Less_than_6','ManagerName']]
+writer = pd.ExcelWriter('/home/affine/Desktop/attendance/Processed_Sheet.xlsx', engine='xlsxwriter')
+merged_more_df.to_excel(writer, sheet_name='more and less',index=False)
+merged_more_df.to_csv('/home/affine/Desktop/attendance/Processed_Sheet.csv', sep='\t', encoding='utf-8')
+sheet = len(writer.book.worksheets())
+for i in range(sheet):
+    sheet1 = writer.book.worksheets()[i]
+    sheet1.set_column(0, 10, 20)
+writer.save()
+
+
